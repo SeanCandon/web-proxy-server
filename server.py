@@ -57,35 +57,38 @@ def conn_string(conn, data, addr):
             port = 80
             webserver = rest[:server_pos]
         else:
-            port  = int((rest[(port_pos+1):])[:server_pos-port_pos-1])
+            port = int((rest[(port_pos+1):])[:server_pos-port_pos-1])
             webserver = rest[:port_pos]
-
+        #print "webserver = %s" % (webserver)
         proxy_server(webserver, port, conn, data, addr)
     except Exception, e:
+        print "fuck didn't work 2"
         pass
 
 
 def proxy_server(webserver, port, conn, data, addr):
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((webserver, PORT))
+        sock.connect((webserver, port))
         sock.send(data)
 
-        while True:
+        while 1:
             reply = sock.recv(buff_size)
-            if(len(reply) <= 0):
-                break
-            else:
+            if(len(reply) > 0):
                 conn.send(reply)
                 dar = float(len(reply))
                 dar = float(dar / 1024)
                 dar = "%.3s" % (str(dar))
                 dar = "%s KB" % (dar)
-                print "request complete: %s => %s <=" % (str(addr[0]), str(dar))
+                #print "request complete: %s => %s <=" % (str(addr[0]), str(dar))
+            else:
+                #print "welp no reply"
+                break
 
         sock.close()
         conn.close()
     except socket.error, (value, message):
+        print "fuck didn't work 3"
         sock.close()
         conn.close()
         sys.exit(2)
