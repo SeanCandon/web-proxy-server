@@ -48,11 +48,13 @@ def proxy_server_http(webserver, port, conn, data, addr, url):
         sock.connect((webserver, port))
         sock.send(data)
 
-        reply = ''
+        # reply = ''
+        reply = bytearray("", 'utf-8')
         while 1:
             temp = sock.recv(buff_size)
             if(len(temp) > 0):
                 conn.send(temp)
+                reply.extend(temp)
                 # temp = temp.decode('cp1252').encode('utf-8')
                 # reply += temp.decode('utf-8')
                 # reply += str(temp, 'utf-8')
@@ -167,15 +169,19 @@ def conn_string(data):
             webserver_pos = len(temp)
         webserver = ""
         port = -1
-        if (port_pos == -1 or webserver < port_pos):
+        if (port_pos == -1):
             port = 80
             webserver = temp[:webserver_pos]
         else:
             port = int((temp[(port_pos+1):])[:webserver_pos-port_pos-1])
             webserver = temp[:port_pos]
 
+        if https:
+            port = 443
+
         return https, webserver, port, url
     except Exception:
+        print("fugg")
         pass
 
 
