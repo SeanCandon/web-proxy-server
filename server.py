@@ -1,17 +1,12 @@
 import socket
 import sys
-import ssl
-from thread import *
+import _thread
 
 PORT = 8080
-buff_size = 1024
-'''
-try:
-    print int(raw_input(""))
-except KeyboardInterrupt:
-    print "Exiting..."
-    sys.exit(1)
-'''
+buff_size = 4096
+
+CACHE = {}
+# BLOCKED = {}
 
 
 def main():
@@ -19,123 +14,169 @@ def main():
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.bind(('', PORT))
         sock.listen(10)
-        print "She's binded!"
-    except Exception, e:
-        print "fuck didn't work"
+        print("She's binded!")
+    except Exception:
         sys.exit(0)
 
     while 1:
         try:
             conn, addr = sock.accept()
             data = conn.recv(buff_size)
-            start_new_thread(conn_string, (conn, data, addr))
+            # print(data)
+            _thread.start_new_thread(proxy_server, (conn, data, addr))
         except KeyboardInterrupt:
             sock.close()
-            print "Exiting"
             sys.exit(1)
-    print "goodbye"
+
     sock.close()
 
 
-def conn_string(conn, data, addr):
-    https = False
-    try:
-        print data
-        line1 = data.split('\n')[0]
-        get = line1.find("GET")
-        if get == -1:
-            https = True
-        url = line1.split(' ')[1]
-        http = url.find("://")
-        if (http == -1):
-            rest = url
-        else:
-            rest = url[(http+3):]
-
-        port_pos = rest.find(":")
-        server_pos = rest.find("/")
-        if server_pos == -1:
-            server_pos = len(rest)
-        webserver = ""
-        port = -1
-        if (port_pos == -1 or server_pos < port_pos):
-            port = 80
-            webserver = rest[:server_pos]
-        else:
-            port = int((rest[(port_pos+1):])[:server_pos-port_pos-1])
-            webserver = rest[:port_pos]
-
-        lines = data.split('\n')
-        print len(lines)
-
-        host = ""
-        for l in lines:
-            h = l.find("Host")
-            if h != -1:
-                host = l.split(' ')[1]
-                break
-
-        if https is False:
-            proxy_server_http(webserver, port, conn, data, addr)
-        else:
-            proxy_server_https(webserver, port, conn, addr, host, url)
-
-    except Exception, e:
-        print "fuck didn't work 2"
-        pass
+def proxy_server(conn, data, addr):
+    https, webserver, port, url = conn_string(data)
+    print("url = " + url)
+    print("webserver = " + webserver)
+    print("port = " + str(port))
+    if https is False:
+        proxy_server_http(webserver, port, conn, data, addr, url)
+    else:
+        proxy_server_https(webserver, port, conn, addr)
 
 
-def proxy_server_http(webserver, port, conn, data, addr):
+def proxy_server_http(webserver, port, conn, data, addr, url):
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((webserver, port))
         sock.send(data)
 
+        reply = ''
         while 1:
-            reply = sock.recv(buff_size)
-            if(len(reply) > 0):
-                conn.send(reply)
-                dar = float(len(reply))
-                dar = float(dar / 1024)
-                dar = "%.3s" % (str(dar))
-                dar = "%s KB" % (dar)
-                # print "request complete: %s => %s <=" % (str(addr[0]), str(dar))
+            temp = sock.recv(buff_size)
+            if(len(temp) > 0):
+                conn.send(temp)
+                # temp = temp.decode('cp1252').encode('utf-8')
+                # reply += temp.decode('utf-8')
+                # reply += str(temp, 'utf-8')
             else:
-                # print "welp no reply"
                 break
+
+        # conn.sendall(reply.encode())
+
+        # reply = sock.recv(buff_size)
+        # conn.sendall(reply)
 
         sock.close()
         conn.close()
-    except socket.error, (value, message):
-        print "fuck didn't work 3"
+    except socket.error:
         sock.close()
         conn.close()
         sys.exit(2)
 
 
-def proxy_server_https(webserver, port, conn, addr, host, url):
+def proxy_server_https(webserver, port, conn, addr):
     try:
-        context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-        context.verify_mode = ssl.CERT_NONE
-        context.check_hostname = False
-        conn2 = context.wrap_socket(socket.socket(socket.AF_INET), server_hostname=webserver)
-        conn2.connect((webserver, 443))
-        conn2.sendall("GET "+url+" HTTP/1.1\r\n"+"Host: "+host+"\r\n"+"Connection: close\r\n"+"\r\n")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((webserver, port))
 
-        reply = ""
+        sock.setblocking(0)
+        conn.setblocking(0)
+
+        conn.sendall("HTTP/1.0 200 Connection established\r\nProxy-Agent: Pyx\r\n\r\n".encode())
+
         while 1:
-            temp = conn2.recv(1024)
-            if not temp:
-                break
-            reply += temp
+            try:
+                reply1 = conn.recv(buff_size)
+                if ((not reply1) or (len(reply1) <= 0)):
+                    break
+                sock.sendall(reply1)
+            except socket.error:
+                pass
 
-        conn.send(reply)
+            try:
+                reply2 = sock.recv(buff_size)
+                if ((not reply2) or (len(reply2) <= 0)):
+                    break
+                conn.sendall(reply2)
+            except socket.error:
+                pass
+
         conn.close()
-        conn2.close()
-    except socket.error, (value, message):
-        print "fuck didn't work 4"
+        sock.close()
+
+    except socket.error:
         conn.close()
         sys.exit(2)
+
+
+def parse_request(request):
+    https = False
+
+    print(request)
+
+    lines = request.decode().split('\n')
+    get = lines[0].find("GET")
+    if get == -1:
+        https = True
+
+    url = lines[0].split(' ')[1]
+    # url = url1.split('/')[1]
+
+    host = ""
+    for l in lines:
+        h = l.find("Host")
+        if h != -1:
+            host = l
+            break
+
+    webserver = host.split(": ")[1]
+    port_pos = webserver.find(":")
+    port = 80
+    if port_pos != -1:
+        port = int(webserver[(port_pos+1):])
+    webserver2 = ""
+    i = 0
+    if port_pos != -1:
+        while i < port_pos:
+            webserver2 += webserver[i]
+            i += 1
+    else:
+        webserver2 = webserver
+
+    if https is True:
+        port = 443
+
+    return https, webserver2, port, url
+
+
+def conn_string(data):
+    https = False
+    try:
+        first = data.decode().split('\n')[0]
+        get = first.find("GET")
+        if get == -1:
+            https = True
+        url = first.split(' ')[1]
+        http_pos = url.find("://")
+        if(http_pos == -1):
+            temp = url
+        else:
+            temp = url[(http_pos+3):]
+
+        port_pos = temp.find(":")
+        webserver_pos = temp.find("/")
+        if webserver_pos == -1:
+            webserver_pos = len(temp)
+        webserver = ""
+        port = -1
+        if (port_pos == -1 or webserver < port_pos):
+            port = 80
+            webserver = temp[:webserver_pos]
+        else:
+            port = int((temp[(port_pos+1):])[:webserver_pos-port_pos-1])
+            webserver = temp[:port_pos]
+
+        return https, webserver, port, url
+    except Exception:
+        pass
 
 
 main()
