@@ -19,11 +19,11 @@ BLOCKED = {}
 TIME = {}
 
 
-# main function. Runs thread for management console, binds new socket
-# to port and waits for a connection from client. When a connection
-# is made it receives client's request and the starts a new thread to deal
-# with it. Function constantly loops, waiting for new connections
 def main():
+    '''main function. Runs thread for management console, binds new socket
+    to port and waits for a connection from client. When a connection
+    is made it receives client's request and the starts a new thread to deal
+    with it. Function constantly loops, waiting for new connections'''
     try:
         _thread.start_new_thread(console, ())
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -49,33 +49,37 @@ def main():
     sock.close()
 
 
-# master function. Firstly it calls parse_request to parse the request, then
-# determines if the url has been blocked. If not, then depending on whether or
-# not the request is HTTP or HTTPS, it will call proxy_server_http or
-# proxy_server_https
 def proxy_server(conn, data, addr, start, bandwidth):
+    '''master function. Firstly it calls parse_request to parse the request, then
+    determines if the url has been blocked. If not, then depending on whether or
+    not the request is HTTP or HTTPS, it will call proxy_server_http or
+    proxy_server_https'''
     https, webserver, port, url = parse_request(data)
-    b = BLOCKED.get(url)
-    bw = 0
-    if b != 1:
-        if https is False:
-            bw = proxy_server_http(webserver, port, conn, data, addr, url, bandwidth)
+    if port != 0:
+        b = BLOCKED.get(url)
+        REQUESTS.insert(END, url)
+        bw = 0
+        if b != 1:
+            if https is False:
+                bw = proxy_server_http(webserver, port, conn, data, addr, url, bandwidth)
+            else:
+                proxy_server_https(webserver, port, conn, addr)
         else:
-            proxy_server_https(webserver, port, conn, addr)
+            print("sorry that url is blocked")
+            conn.close()
+        end = time.time()
+        if https is False:
+            print("time elapsed = " + str(end-start) + " seconds")
+            print("total bandwidth = " + str(bw) + " bytes")
     else:
-        print("sorry that url is blocked")
         conn.close()
-    end = time.time()
-    if https is False:
-        print("time elapsed = " + str(end-start) + " seconds")
-        print("total bandwidth = " + str(bw) + " bytes")
 
 
-# function to handle http requests. Will check if the url has been
-# cached. If yes, then it creates an if-modified message and passes that
-# into send_and_cache, which handles http communication and caching. If no,
-# then the initial request is passed into send_and_cache
 def proxy_server_http(webserver, port, conn, data, addr, url, bandwidth):
+    '''function to handle http requests. Will check if the url has been
+    cached. If yes, then it creates an if-modified message and passes that
+    into send_and_cache, which handles http communication and caching. If no,
+    then the initial request is passed into send_and_cache'''
     try:
         b = 0
         x = CACHE.get(url)
@@ -116,11 +120,11 @@ def proxy_server_http(webserver, port, conn, data, addr, url, bandwidth):
         sys.exit(2)
 
 
-# function to handle https. It first sends a HTTP/1.0 200 Connection
-# established to the client, and then enters a loop that will only exit
-# when the connection closes. In the loop it will pass encrypted data
-# between the client and web server.
 def proxy_server_https(webserver, port, conn, addr):
+    '''function to handle https. It first sends a HTTP/1.0 200 Connection
+    established to the client, and then enters a loop that will only exit
+    when the connection closes. In the loop it will pass encrypted data
+    between the client and web server.'''
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((webserver, port))
@@ -158,61 +162,68 @@ def proxy_server_https(webserver, port, conn, addr):
         sys.exit(2)
 
 
-# function that parses a client's request. It determines whether or not it's a
-# http or https request, then parses the request for the url, hostname, and
-# port number.
 def parse_request(request):
-    https = False
+    '''
+    function that parses a client's request. It determines whether or not it's a
+    http or https request, then parses the request for the url, hostname, and
+    port number.'''
+    try:
+        https = False
 
-    lines = request.decode().split("\r\n")
-    # if "GET" is found, we know it's http, not https
-    get = lines[0].find("GET")
-    if get == -1:
-        https = True
+        lines = request.decode().split("\r\n")
+        # if "GET" is found, we know it's http, not https
+        get = lines[0].find("GET")
+        if get == -1:
+            https = True
 
-    # get url from request
-    url = "https://"
-    url1 = lines[0].split(' ')[1]
-    url += url1.split(':')[0]
-    url += "/"
+        # get url from request
+        url = "https://"
+        url1 = lines[0].split(' ')[1]
+        url += url1.split(':')[0]
+        url += "/"
 
-    # get hostname from request
-    host = ""
-    for l in lines:
-        h = l.find("Host")
-        if h != -1:
-            host = l
-            break
-    webserver = host.split(": ")[1]
-    port_pos = webserver.find(":")
-    webserver2 = ""
-    i = 0
-    if port_pos != -1:
-        while i < port_pos:
-            webserver2 += webserver[i]
-            i += 1
-    else:
-        webserver2 = webserver
+        # get hostname from request
+        host = ""
+        for l in lines:
+            h = l.find("Host")
+            if h != -1:
+                host = l
+                break
+        webserver = host.split(": ")[1]
+        port_pos = webserver.find(":")
+        webserver2 = ""
+        i = 0
+        if port_pos != -1:
+            while i < port_pos:
+                webserver2 += webserver[i]
+                i += 1
+        else:
+            webserver2 = webserver
 
-    # if a https connection use port 443, otherwise use port 80
-    if https is True:
-        port = 443
-    else:
-        port = 80
+        # if a https connection use port 443, otherwise use port 80
+        if https is True:
+            port = 443
+        else:
+            port = 80
 
-    if https:
-        return https, webserver2, port, url
-    else:
-        return https, webserver2, port, url1
+        if https:
+            return https, webserver2, port, url
+        else:
+            return https, webserver2, port, url1
+    except Exception:
+        pass
+        return True, 0, 0, ""
 
 
-# function to handle the management console. Two buttons and two Text entries
-# are created. If the BLOCK button is clicked, the string from the block
-# entry is retrieved and put into the BLOCKED cache. If UNBLOCK is clicked,
-# then the inputted string is popped from the BLOCKED cache, if it's already
-# present
 def console():
+    '''
+    function to handle the management console. Two buttons and two Text entries
+    are created. If the BLOCK button is clicked, the string from the block
+    entry is retrieved and put into the BLOCKED cache. If UNBLOCK is clicked,
+    then the inputted string is popped from the BLOCKED cache, if it's already
+    present'''
     console = tk.Tk()
+    console.geometry("500x500")
     # create text entries
     block_input = Entry(console)
     block_input.grid(row=0, column=0)
@@ -244,15 +255,21 @@ def console():
     block.grid(row=0, column=1)
     block = Button(console, text = "UNBLOCK", command=callback2)
     block.grid(row=1, column=1)
+
+    global REQUESTS
+    REQUESTS = Listbox(console)
+    REQUESTS.grid(row=2, columnspan=2)
+    REQUESTS.config(width=50, height=50)
     # calling mainloop() runs console
     mainloop()
 
 
-# function to retrieve the day, date, and time from a response from a web
-# server. This is necessary for later using this information in an if-Modified
-# request. This function looks for the string "Date" in the response and then
-# returns the next 30 characters.
 def get_time(response):
+    '''
+    function to retrieve the day, date, and time from a response from a web
+    server. This is necessary for later using this information in an if-Modified
+    request. This function looks for the string "Date" in the response and then
+    returns the next 30 characters.'''
     start = 0
     end = 0
     i = 0
@@ -274,14 +291,16 @@ def get_time(response):
     return time
 
 
-# function to handle http connections including caching. It first sends the
-# get request (perhaps containing an if-modified) and receives the first chunk
-# of data back. It then checks this chunk for a "200 OK" (by calling the boolean
-# function is-modified). If found, then it waits to receive the entirety of the
-# response and sends that back to the client, while also updating the cache. If
-# the data hasn't been modified however, the function doesn't wait for the rest
-# of the response, and instead retrieves the data from the cache and sends that.
 def send_and_cache(sock, data, url, conn, bandwidth):
+    '''
+    function to handle http connections including caching. It first sends the
+    get request (perhaps containing an if-modified) and receives the first chunk
+    of data back. It then checks this chunk for a "200 OK" (by calling the boolean
+    function is-modified). If found, then it waits to receive the entirety of the
+    response and sends that back to the client, while also updating the cache. If
+    the data hasn't been modified however, the function doesn't wait for the rest
+    of the response, and instead retrieves the data from the cache and sends that.
+    '''
     sock.send(data)
 
     sock.settimeout(2)
@@ -362,17 +381,15 @@ def send_and_cache(sock, data, url, conn, bandwidth):
     return bandwidth
 
 
-# function to determine whether or not data has been modified since it was
-# cached. If the string "200 OK" is found, we know the data has indeed been
-# modified. Otherwise, we know that it hasn't been.
 def is_modified(reply):
-    i = 0
-    while i < len(reply):
-        if (reply[i] == ord('2') and reply[i+1] == ord('0') and reply[i+2] == ord('0')
-           and reply[i+4] == ord('O') and reply[i+5] == ord('K')):
-            print("has been modified since")
-            return True
-        i += 1
+    '''function to determine whether or not data has been modified since it was
+    cached. If the string "304 Not Modified" is found, we know the data has
+    not been modified. Otherwise, we know that it has been.'''
+    r = reply.decode()
+    f = r.find("304 Not Modified")
+    if f == -1:
+        print("has been modified since")
+        return True
     return False
 
 
